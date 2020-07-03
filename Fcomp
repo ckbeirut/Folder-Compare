@@ -1,0 +1,150 @@
+#include <iostream>
+#include <iterator>
+#include <map>
+#include <string>
+#include <sys/stat.h>
+#include <windows.h>
+
+#ifndef INVALID_FILE_ATTRIBUTES
+constexpr DWORD INVALID_FILE_ATTRIBUTES = ((DWORD)-1);
+#endif
+
+bool IsDir(const std::string &path)
+{
+    DWORD Attr;
+
+    Attr = GetFileAttributes(path.c_str());
+    if (Attr == INVALID_FILE_ATTRIBUTES)
+    return false;
+
+    return (bool)(Attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+std::string sanitizePath(std::string const &input)
+{
+auto pos = input.find_last_not_of("/\\");
+return input.substr(0, pos + 1);
+}
+
+std::map<std::string, unsigned long > findFiles(std::string &spath)
+{
+size_t i = 1;
+WIN32_FIND_DATA FindFileData;
+
+std::map<std::string, unsigned long > list;
+
+std::string sourcepath = spath + std::string("\\*.*");
+
+HANDLE hFind = FindFirstFile(sourcepath.c_str(), &FindFileData);
+
+if (hFind != INVALID_HANDLE_VALUE)
+    do {
+        std::string fullpath = std::string(spath) + std::string("\\") + std::string(FindFileData.cFileName);
+
+        if (*(fullpath.rbegin()) == '.')
+            continue;
+        else
+        if (FindFileData.dwFileAttributes &FILE_ATTRIBUTE_DIRECTORY)
+            findFiles(fullpath);
+        else
+        {
+            list[FindFileData.cFileName] = FindFileData.nFileSizeHigh *(MAXWORD + 1) + FindFileData.nFileSizeLow;
+        }
+    } while (FindNextFile(hFind, &FindFileData));
+
+FindClose(hFind);
+
+return list;
+}
+
+void displayMap(std::map<std::string, unsigned long > &map)
+{
+std::map<std::string, unsigned long>::const_iterator itr;
+
+for (itr = map.begin(); itr != map.end(); itr++)
+    std::cout << "File Name: " << itr->first << " Size: " << itr->second << " bytes" << std::endl;
+}
+
+std::map<std::string, unsigned long > map_intersect(std::map<std::string, unsigned long > const 
+ &source, std::map<std::string, unsigned long > const &dest)
+{
+    std::map<std::string, unsigned long > inter;
+    std::map<std::string, unsigned long>::const_iterator iter = dest.begin();
+    std::map<std::string, unsigned long>::const_iterator end = dest.end();
+    for (; iter != end; iter++)
+    {
+        if (source.find(iter->first) != source.end())
+        {
+        inter[iter->first] = iter->second;
+        }
+    }
+
+    return inter;
+   }
+
+std::map<std::string, unsigned long > map_difference(std::map<std::string, unsigned long > const 
+    &source, std::map<std::string, unsigned long > const &dest)
+    {
+        std::map<std::string, unsigned long > diff = source;
+        std::map<std::string, unsigned long>::const_iterator iter = dest.begin();
+        std::map<std::string, unsigned long>::const_iterator end = dest.end();
+        for (; iter != end; iter++)
+        {
+            if (source.find(iter->first) != source.end())
+            {
+            diff.erase(iter->first);
+            }
+        }
+
+        return diff;
+    }
+
+int main(int argc, char **argv)
+{
+if (argc <= 2)
+{
+    std::cerr << "No path or filename provided" << std::endl;
+    return EXIT_FAILURE;
+}
+
+const char *source = argv[1];
+const char *destination = argv[2];
+
+if (!IsDir(source))
+{
+    std::cerr << "Source path doesn't exist" << std::endl;
+    return EXIT_FAILURE;
+}
+
+if (!IsDir(destination))
+{
+    std::cerr << "Destination path doesn't exist" << std::endl;
+    return EXIT_FAILURE;
+}
+
+std::string spath = sanitizePath(source);
+std::string dpath = sanitizePath(destination);
+
+std::cout << "Comparing " << spath << " and " << dpath << std::endl;
+
+std::map<std::string, unsigned long > slist, dlist, ilist, diflist;
+
+slist = findFiles(spath);
+dlist = findFiles(dpath);
+
+ilist = map_intersect(slist, dlist);
+diflist = map_difference(slist, dlist);
+
+if (ilist.empty())
+    std::cout << "There is no common files" << std::endl;
+else
+{
+    std::cout << "The common files are" << std::endl;
+    displayMap(ilist);
+}
+
+if (diflist.empty())
+    std::cout << "The 2 folder are the same" << std::endl;
+
+return EXIT_SUCCESS;
+}
